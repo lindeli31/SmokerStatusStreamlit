@@ -278,7 +278,7 @@ In the multiselect predictors can bee chose although classification tree work th
             )
             st.pyplot(fig)
     st.write("""
-    In conclusion it calssification tree seems to have better perfomances for our purpose.          
+    In conclusion classification trees seems to have better perfomances for our purpose.          
     """)
 
 

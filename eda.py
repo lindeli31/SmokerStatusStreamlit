@@ -24,9 +24,12 @@ def show_eda():
     In clinical and research contexts, reliably determining whether a patient is a smoker is crucial for both:
     - Prevention and management of chronic diseases
     - Ensuring response reliability in health surveys
-
+    
     Smoking status can be a sensitive topic, and patients might provide inaccurate self-reports. 
     Our solution analyzes biological markers to objectively predict smoking status.
+    The working dataset contains N = 38984 adult observations and p = 15 biological variables drawn from routine clinical
+    examinations. The target variable Smoking is binary (1 = current smoker, 0 = non-smoker). 
+    There are no missing data. The sample size of smokers is 14,318, and non-smokers is 24,666.
     """)
 
 # Lista variabili con tooltip esplicativi
