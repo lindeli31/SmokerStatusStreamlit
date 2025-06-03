@@ -30,3 +30,18 @@ An interactive Streamlit application that lets users
 
 ---
 
+
+If you **just want to try the dashboard** and don’t care about creating a permanent virtual-env:
+
+```bash
+# ① Install uv (one-time, 5-second download)
+curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS/Linux
+# on Windows:  iwr -useb https://astral.sh/uv/install.ps1 | iex
+
+# ② Grab the code any way you like (clone / ZIP) and cd inside
+git clone https://github.com/<your-username>/smokerstatusprediction.git
+cd smokerstatusprediction            # or the folder you un-zipped
+
+# ③ Run the code
+uv run streamlit run app.py
+
