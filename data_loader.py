@@ -6,18 +6,6 @@ def load_data(path: str) -> pl.DataFrame:
     df = pl.read_csv(path)
     df = df.rename({c: c.strip() for c in df.columns})
 
-    if {"hearing(left)", "hearing(right)"}.issubset(df.columns):
-        df = (
-            df.with_columns(
-                pl.when((pl.col("hearing(left)") == 1) & (pl.col("hearing(right)") == 1))
-                .then(-1)
-                .when((pl.col("hearing(left)") == 2) | (pl.col("hearing(right)") == 2))
-                .then(1)
-                .otherwise(None)
-                .alias("hearing")
-            )
-            .select(pl.exclude(["hearing(left)", "hearing(right)"]))
-        )
 
     if "dental caries" in df.columns:
         df = df.with_columns(
@@ -29,7 +17,7 @@ def load_data(path: str) -> pl.DataFrame:
             .alias("dental caries")
         )
 
-    cat_cols = [c for c in ["hearing", "dental caries", "smoking", "Urine protein", "Urine.protein"] if c in df.columns]
+    cat_cols = [c for c in ["hearing(left)", "hearing(right)", "dental caries", "smoking"] if c in df.columns]
     for c in cat_cols:
         df = df.with_columns(pl.col(c).cast(pl.Utf8).cast(pl.Categorical))
 

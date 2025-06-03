@@ -1,21 +1,100 @@
-import streamlit as st
-import pandas as pd
+
+import io
+from typing import List
+
+import altair as alt
+import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+import pandas as pd
+import statsmodels.api as sm
+import streamlit as st
 from sklearn.compose import ColumnTransformer
+from sklearn.discriminant_analysis import (
+    LinearDiscriminantAnalysis,
+    QuadraticDiscriminantAnalysis,
+)
+from sklearn.metrics import (
+    confusion_matrix,
+    roc_auc_score,
+    roc_curve,
+)
+from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, roc_auc_score, classification_report, roc_curve
-import altair as alt  # Solo Altair
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+
+# --------------------------- Helper functions ----------------------------- #
+
+def sensitivity_specificity(cm: np.ndarray):
+    """Return sensitivity (recall for positive class 1) and specificity."""
+    tn, fp, fn, tp = cm.ravel()
+    sens = tp / (tp + fn) if (tp + fn) else np.nan
+    spec = tn / (tn + fp) if (tn + fp) else np.nan
+    return sens, spec
+
+
+def show_confusion_matrix(cm: np.ndarray, labels: List[str]):
+    """Altair heatmap con etichette leggibili (Actual sulle righe)."""
+    idx_lbl = [f"Actual {labels[0]}", f"Actual {labels[1]}"]
+    col_lbl = [f"Pred {labels[0]}", f"Pred {labels[1]}"]
+    cm_df = (
+        pd.DataFrame(cm, index=idx_lbl, columns=col_lbl)
+        .reset_index()
+        .melt(id_vars="index", var_name="Pred", value_name="Count")
+    )
+    heatmap = (
+        alt.Chart(cm_df)
+        .mark_rect()
+        .encode(
+            x="Pred:N",
+            y="index:N",
+            color=alt.Color("Count:Q", scale=alt.Scale(scheme="blues")),
+            tooltip=["index:N", "Pred:N", "Count:Q"],
+        )
+    )
+    text = heatmap.mark_text(color="black").encode(text="Count:Q")
+    st.altair_chart(heatmap + text, use_container_width=True)
+
+
+def plot_roc(y_true, y_prob):
+    roc_auc = roc_auc_score(y_true, y_prob)
+    fpr, tpr, _ = roc_curve(y_true, y_prob)
+    roc_data = pd.DataFrame({"FPR": fpr, "TPR": tpr})
+    random_line = pd.DataFrame({"x": [0, 1], "y": [0, 1]})
+
+    roc_chart = (
+        alt.Chart(roc_data)
+        .mark_line(strokeWidth=3)
+        .encode(x="FPR:Q", y="TPR:Q", tooltip=["FPR", "TPR"])
+        .properties(title=f"ROC Curve (AUC = {roc_auc:.2f})")
+    )
+    rand_chart = (
+        alt.Chart(random_line)
+        .mark_line(color="red", strokeDash=[5, 5])
+        .encode(x="x:Q", y="y:Q")
+    )
+    st.altair_chart(roc_chart + rand_chart, use_container_width=True)
+
+
+# --------------------------- Streamlit UI -------------------------------- #
 
 def show_modeling():
-    st.title("Modellazione – Classificazione fumatore vs non-fumatore")
+    st.title("Models for classification smoking status")
+    
+    st.write("""
+    In this section three models can be choose to train to classify the smoking status, 
+    in this situation our main concern is to not misclassify smokers, so sensitivity is
+    shown as an important metric to compare the models.  Predictors can be choose for the 
+    logistic regression, and the classification tree though classification tree 
+    are themselves predictor selectors. In the training of LDA and QDA,
+    all variable that violet inherently the assumption of normality, which is necessary 
+    for these  models, were excluded. Cross validation is used to train the classification tree
+    to choose the cost complexity parameter. More models can be added in the future. 
+    """)
 
-    from data_loader import load_data
+    from data_loader import load_data  # lazy import per compatibilità
+
     file_path = st.sidebar.text_input("CSV path (Modeling)", "train_dataset.csv")
-
     try:
         df = load_data(file_path)
     except Exception as e:
@@ -23,88 +102,183 @@ def show_modeling():
         st.stop()
 
     df_pd = df.to_pandas()
-    if "smoking" not in df.columns:
-        st.error("La variabile di destinazione 'smoking' non è presente nel dataset.")
-        st.stop()
+    full_df = df_pd.dropna(subset=["smoking"])  # solo righe con target presente
 
-    model_df = df_pd.dropna(subset=["smoking"])
-    X = model_df.drop(columns=["smoking"])
-    y = model_df["smoking"].astype("category").cat.codes
+    # ----------- Target binario: 1 = fumatore (positivo) ----------------- #
+    y_bin = full_df["smoking"].astype(str).eq("1").astype(int)
+    label_names = ["0", "1"]  # non‑smoker, smoker
 
-    cat_features = X.select_dtypes(include=["object", "category"]).columns.tolist()
-    num_features = X.select_dtypes(include=[np.number]).columns.tolist()
+    # -------------------- Variabili predittive --------------------------- #
+    available_vars: List[str] = [c for c in full_df.columns if c != "smoking"]
+    selected_vars = st.multiselect(
+        "Predictors for logistic regression/classification Tree", available_vars, default=available_vars
+    )
 
-    algo = st.selectbox("Algoritmo", ["Logistic Regression"])
-    test_size = st.slider("Test size", 0.1, 0.5, 0.25, 0.05)
+    exclude_cols = [
+        "hearing(right)",
+        "hearing(left)",
+        "eyesight(left)",
+        "eyesight(right)",
+        "Urine protein",
+        "dental caries",
+    ]
+    discriminant_cols = [c for c in full_df.columns if c not in exclude_cols and c != "smoking"]
 
-    if algo == "Logistic Regression":
-        C = st.number_input("Inverse regularization strength (C)", 0.01, 10.0, 1.0, 0.1)
-    else:
-        n_estimators = st.slider("n_estimators", 50, 500, 200, 50)
-        max_depth = st.slider("max_depth", 2, 20, 10, 1)
+    algo = st.selectbox(
+        "Model",
+        [
+            "Logistic Regression",
+            "Linear Discriminant Analysis (LDA)",
+            "Quadratic Discriminant Analysis (QDA)",
+            "Decision Tree",
+        ],
+    )
+
+    # Hyper‑parametri solo per Albero
+    if algo == "Decision Tree":
+        max_depth = st.slider("max_depth", 2, 20, 6, 1)
 
     if st.button("Train model"):
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ("num", StandardScaler(), num_features),
-                ("cat", OneHotEncoder(handle_unknown="ignore"), cat_features),
-            ]
-        )
         if algo == "Logistic Regression":
-            classifier = LogisticRegression(max_iter=500, C=C)
-        else:
-            classifier = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, random_state=42)
+            st.write("""
+Automatic selection can lead to the exclusion from the model 
+of explanatory variables that are essential for interpretation.
 
-        pipe = Pipeline([("prep", preprocessor), ("clf", classifier)])
+Moreover, the entry and exit tests for variables are conducted by comparing 
+the minimum or maximum value of statistics with the quantiles of nominal 
+reference distributions (normal, t, F, ...) that are not appropriate, 
+as they are valid, if at all, only for a single analysis.
 
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, stratify=y, random_state=42)
-        pipe.fit(X_train, y_train)
-        y_pred = pipe.predict(X_test)
-        y_prob = pipe.predict_proba(X_test)[:, 1]
+As a result, inference in the final model is highly inaccurate. 
+The observed significance levels for individual coefficients, 
+calculated ignoring the selection process, will, for example, 
+be smaller than they should be and, consequently, 
+the confidence intervals narrower than they should be.
+""")
+            X_full = full_df[selected_vars]
+            data_logit = pd.concat([y_bin.rename("smoking"), X_full], axis=1).dropna()
+            y_logit = data_logit["smoking"]
+            X_logit = data_logit[selected_vars]
 
-        acc = accuracy_score(y_test, y_pred)
-        roc_auc = roc_auc_score(y_test, y_prob)
+            X_enc = pd.get_dummies(X_logit, drop_first=True).astype(float)
+            X_enc = sm.add_constant(X_enc)
 
-        st.success(f"Accuracy: {acc:.3f} | ROC-AUC: {roc_auc:.3f}")
+            try:
+                res = sm.Logit(y_logit, X_enc).fit(disp=0)
+            except Exception as e:
+                st.error(f"Errore nell'adattamento del modello: {e}")
+                st.stop()
 
-        with st.expander("Classification report"):
-            st.text(classification_report(y_test, y_pred))
+            st.subheader("Coefficenti e p‑value (classe riferimento primo livello)")
+            st.dataframe(res.summary2().tables[1].round(4))
 
-        # Generazione dati per ROC con Altair
-        fpr, tpr, _ = roc_curve(y_test, y_prob)
-        roc_data = pd.DataFrame({"FPR": fpr, "TPR": tpr})
-        
-        # Linea della classificazione casuale
-        random_line = pd.DataFrame({"x": [0, 1], "y": [0, 1]})
-        
-        # Creazione del grafico ROC con Altair
-        roc_chart = (
-            alt.Chart(roc_data)
-            .mark_line(strokeWidth=3)
-            .encode(
-                x=alt.X("FPR:Q", title="False Positive Rate"),
-                y=alt.Y("TPR:Q", title="True Positive Rate"),
-                tooltip=["FPR", "TPR"]
+            y_prob = res.predict(X_enc)
+            y_pred = (y_prob >= 0.5).astype(int)
+
+            cm = confusion_matrix(y_logit, y_pred, labels=[0, 1])
+            sens, spec = sensitivity_specificity(cm)
+
+            st.write(f"**Sensitività (classe 1):** {sens:.3f} | **Specificità:** {spec:.3f}")
+            show_confusion_matrix(cm, label_names)
+            plot_roc(y_logit, y_prob)
+
+        elif algo in [
+            "Linear Discriminant Analysis (LDA)",
+            "Quadratic Discriminant Analysis (QDA)",
+        ]:
+            st.write("""
+            QDA has a lower sensitivity than LDA probably because QDA penalizes groups with higher variances, 
+            so as result we have good classification of non smokers.  We emphasize that in this case it could be limiting to look at the discriminant
+function since its estimation depends on the quality of the data. An option would
+be to adjust the threshold and use the posterior probabilities estimated by the model for classification.        
+                     
+            """)
+            X_disc = full_df[discriminant_cols].dropna()
+            y_disc = y_bin.loc[X_disc.index]
+
+            cat_features = X_disc.select_dtypes(include=["object", "category"]).columns
+            preprocessor = ColumnTransformer(
+                transformers=[("cat", OneHotEncoder(handle_unknown="ignore"), cat_features)],
+                remainder="passthrough",
             )
-            .properties(title=f"ROC Curve (AUC = {roc_auc:.2f})")
+
+            clf = LinearDiscriminantAnalysis() if algo.startswith("Linear") else QuadraticDiscriminantAnalysis(store_covariance=True)
+            pipe = Pipeline([("prep", preprocessor), ("clf", clf)])
+            pipe.fit(X_disc, y_disc)
+
+            y_pred = pipe.predict(X_disc)
+            y_prob = pipe.predict_proba(X_disc)[:, 1]
+
+            cm = confusion_matrix(y_disc, y_pred, labels=[0, 1])
+            sens, spec = sensitivity_specificity(cm)
+
+            st.write(f"**Sensitività (classe 1):** {sens:.3f} | **Specificità:** {spec:.3f}")
+            show_confusion_matrix(cm, label_names)
+            plot_roc(y_disc, y_prob)
+
+        else:  # Decision Tree
+            st.write("""
+The decision tree is grown on the full data set with a user-defined maximum depth to keep the structure interpretable.
+Its cost-complexity pruning parameter is selected via 5-fold cross-validation, producing a pruned tree that balances accuracy and simplicity.
+In the multiselect predictors can bee chose although classification tree work themselves as predictors selectors""")
+    # --- Predittori e target (niente split train/test) ------------------ #
+            X_tree_full = full_df[selected_vars].dropna()
+            y_tree_full = y_bin.loc[X_tree_full.index]
+
+    # One-hot dei categorici
+            cat_features = X_tree_full.select_dtypes(include=["object", "category"]).columns
+            preprocessor = ColumnTransformer(
+            transformers=[("cat", OneHotEncoder(handle_unknown="ignore"), cat_features)],
+            remainder="passthrough",
         )
-        
-        # Aggiunta linea casuale
-        random_chart = (
-            alt.Chart(random_line)
-            .mark_line(color="red", strokeDash=[5, 5])
-            .encode(
-                x=alt.X("x:Q"),
-                y=alt.Y("y:Q")
+
+    # Albero con profondità massima scelta a priori per interpretabilità
+            base_tree = DecisionTreeClassifier(
+                max_depth=max_depth,      # slider nello sidebar
+                random_state=42
             )
-        )
-        
-        # Combinazione dei grafici
-        final_chart = (roc_chart + random_chart).configure_axis(
-            grid=False
-        ).configure_view(
-            strokeWidth=0
-        )
-        
-        st.altair_chart(final_chart, use_container_width=True)
-        
+            pipe = Pipeline([("prep", preprocessor), ("clf", base_tree)])
+
+        # GridSearchCV su cost-complexity pruning (post-potatura)
+                
+            alphas = np.linspace(0.0, 0.02, 21)
+            grid = GridSearchCV(
+            pipe,
+            param_grid={"clf__ccp_alpha": alphas},
+            cv=5,
+            scoring="roc_auc",
+            n_jobs=-1,
+            )
+            grid.fit(X_tree_full, y_tree_full)
+            best_pipe = grid.best_estimator_
+
+    # Valutazione sullo stesso set (coerente con altri modelli)
+            y_pred = best_pipe.predict(X_tree_full)
+            y_prob = best_pipe.predict_proba(X_tree_full)[:, 1]
+
+            cm = confusion_matrix(y_tree_full, y_pred, labels=[0, 1])
+            sens, spec = sensitivity_specificity(cm)
+
+            st.write(f"**Sensitività (classe 1):** {sens:.3f} | **Specificità:** {spec:.3f}")
+            show_confusion_matrix(cm, label_names)
+            plot_roc(y_tree_full, y_prob)
+
+            # Tree visualizazion
+            clf_best: DecisionTreeClassifier = best_pipe.named_steps["clf"]
+            feature_names = best_pipe.named_steps["prep"].get_feature_names_out()
+            fig, ax = plt.subplots(figsize=(12, 6))
+            plot_tree(
+                clf_best,
+                feature_names=feature_names,
+                class_names=["non-smoker", "smoker"],
+                max_depth=3,
+                filled=True,
+                impurity=False,
+                ax=ax,
+            )
+            st.pyplot(fig)
+    st.write("""
+    In conclusion it calssification tree seems to have better perfomances for our purpose.          
+    """)
+
+
