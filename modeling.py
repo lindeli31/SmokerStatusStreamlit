@@ -1,7 +1,6 @@
 
-import io
 from typing import List
-
+import seaborn as sns #to plot the confusion matrix 
 import altair as alt
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,29 +30,33 @@ def sensitivity_specificity(cm: np.ndarray):
     sens = tp / (tp + fn) if (tp + fn) else np.nan
     spec = tn / (tn + fp) if (tn + fp) else np.nan
     return sens, spec
+  
 
 
-def show_confusion_matrix(cm: np.ndarray, labels: List[str]):
-    """Altair heatmap con etichette leggibili (Actual sulle righe)."""
-    idx_lbl = [f"Actual {labels[0]}", f"Actual {labels[1]}"]
-    col_lbl = [f"Pred {labels[0]}", f"Pred {labels[1]}"]
-    cm_df = (
-        pd.DataFrame(cm, index=idx_lbl, columns=col_lbl)
-        .reset_index()
-        .melt(id_vars="index", var_name="Pred", value_name="Count")
-    )
-    heatmap = (
-        alt.Chart(cm_df)
-        .mark_rect()
-        .encode(
-            x="Pred:N",
-            y="index:N",
-            color=alt.Color("Count:Q", scale=alt.Scale(scheme="blues")),
-            tooltip=["index:N", "Pred:N", "Count:Q"],
-        )
-    )
-    text = heatmap.mark_text(color="black").encode(text="Count:Q")
-    st.altair_chart(heatmap + text, use_container_width=True)
+def show_confusion_matrix(cm, classes):
+    """Visualizza una matrice di confusione compatta con matplotlib/seaborn."""
+    plt.figure(figsize=(2, 2))  # Dimensione ridotta
+    ax = sns.heatmap(cm, 
+                     annot=True, 
+                     fmt='d', 
+                     cmap='Blues', 
+                     square=True,
+                     xticklabels=classes, 
+                     yticklabels=classes,
+                     cbar=False,
+                     annot_kws={'size': 8})  # Testo annotazione più piccolo
+    
+    # Impostazioni assi e label
+    ax.set_xlabel('Predicted', fontsize=6)
+    ax.set_ylabel('Actual', fontsize=6)
+    ax.tick_params(axis='both', labelsize=6)  # Riduce dimensione label degli assi
+    
+    # Ottimizzazione layout
+    plt.tight_layout(pad=0.5)
+    
+    # Visualizzazione in Streamlit
+    st.pyplot(plt.gcf(), use_container_width=False)
+    plt.close()  # Chiude la figura per evitare sovrapposizioni
 
 
 def plot_roc(y_true, y_prob):
@@ -102,14 +105,13 @@ def show_modeling():
         st.stop()
 
     df_pd = df.to_pandas()
-    full_df = df_pd.dropna(subset=["smoking"])  # solo righe con target presente
 
     # ----------- Target binario: 1 = fumatore (positivo) ----------------- #
-    y_bin = full_df["smoking"].astype(str).eq("1").astype(int)
+    y_bin = df_pd["smoking"].astype(str).eq("1").astype(int)
     label_names = ["0", "1"]  # non‑smoker, smoker
 
     # -------------------- Variabili predittive --------------------------- #
-    available_vars: List[str] = [c for c in full_df.columns if c != "smoking"]
+    available_vars: List[str] = [c for c in df_pd.columns if c != "smoking"]
     selected_vars = st.multiselect(
         "Predictors for logistic regression/classification Tree", available_vars, default=available_vars
     )
@@ -122,7 +124,7 @@ def show_modeling():
         "Urine protein",
         "dental caries",
     ]
-    discriminant_cols = [c for c in full_df.columns if c not in exclude_cols and c != "smoking"]
+    discriminant_cols = [c for c in df_pd.columns if c not in exclude_cols and c != "smoking"]
 
     algo = st.selectbox(
         "Model",
@@ -155,7 +157,7 @@ calculated ignoring the selection process, will, for example,
 be smaller than they should be and, consequently, 
 the confidence intervals narrower than they should be.
 """)
-            X_full = full_df[selected_vars]
+            X_full = df_pd[selected_vars]
             data_logit = pd.concat([y_bin.rename("smoking"), X_full], axis=1).dropna()
             y_logit = data_logit["smoking"]
             X_logit = data_logit[selected_vars]
@@ -169,7 +171,7 @@ the confidence intervals narrower than they should be.
                 st.error(f"Errore nell'adattamento del modello: {e}")
                 st.stop()
 
-            st.subheader("Coefficenti e p‑value (classe riferimento primo livello)")
+            st.subheader("Model summary")
             st.dataframe(res.summary2().tables[1].round(4))
 
             y_prob = res.predict(X_enc)
@@ -178,7 +180,7 @@ the confidence intervals narrower than they should be.
             cm = confusion_matrix(y_logit, y_pred, labels=[0, 1])
             sens, spec = sensitivity_specificity(cm)
 
-            st.write(f"**Sensitività (classe 1):** {sens:.3f} | **Specificità:** {spec:.3f}")
+            st.write(f"**Sensitivity (classe 1):** {sens:.3f} | **Specificity:** {spec:.3f}")
             show_confusion_matrix(cm, label_names)
             plot_roc(y_logit, y_prob)
 
@@ -193,7 +195,7 @@ function since its estimation depends on the quality of the data. An option woul
 be to adjust the threshold and use the posterior probabilities estimated by the model for classification.        
                      
             """)
-            X_disc = full_df[discriminant_cols].dropna()
+            X_disc = df_pd[discriminant_cols].dropna()
             y_disc = y_bin.loc[X_disc.index]
 
             cat_features = X_disc.select_dtypes(include=["object", "category"]).columns
@@ -222,7 +224,7 @@ The decision tree is grown on the full data set with a user-defined maximum dept
 Its cost-complexity pruning parameter is selected via 5-fold cross-validation, producing a pruned tree that balances accuracy and simplicity.
 In the multiselect predictors can bee chose although classification tree work themselves as predictors selectors""")
     # --- Predittori e target (niente split train/test) ------------------ #
-            X_tree_full = full_df[selected_vars].dropna()
+            X_tree_full = df_pd[selected_vars].dropna()
             y_tree_full = y_bin.loc[X_tree_full.index]
 
     # One-hot dei categorici
