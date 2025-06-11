@@ -1,4 +1,3 @@
-
 from typing import List
 import seaborn as sns #to plot the confusion matrix 
 import altair as alt
