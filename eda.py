@@ -32,7 +32,6 @@ def show_eda():
     There are no missing data. The sample size of smokers is 14,318, and non-smokers is 24,666.
     """)
 
-# Lista variabili con tooltip esplicativi
     with st.expander("🧪 Predictor Variables", expanded=True):
         st.markdown("""
         We consider these biological measurements:
@@ -48,7 +47,6 @@ def show_eda():
         - **Oral Health**: Dental Caries
         """)
 
-# Espansore per dettagli tecnici delle variabili
     with st.expander("📚 Variable Details", expanded=False):
         st.markdown("""
         | Variable | Clinical Significance |
@@ -70,11 +68,11 @@ def show_eda():
         | Dental Caries | Presence of tooth cavities |
         """)
 
-# Anteprima dati e tipologie
     with st.expander("👁 Preview & info", expanded=False):
         st.dataframe(df.head(10))
         st.markdown("**Data types:**")
-        st.write(df.dtypes)
+        # Opzione più pulita: mostra nome variabile e tipo
+        st.write(df_pd.dtypes.to_frame('Type'))
         
     #dropping al categorical variables 
     numeric_cols = [c for c in df.columns if df[c].dtype.is_numeric()]  
@@ -88,8 +86,9 @@ def show_eda():
     if len(num_pd.columns) > 1:
         corr = num_pd.corr().reset_index().melt(id_vars='index')
         corr.columns = ['var1', 'var2', 'correlation']
-    
-        thr = st.slider("**|r| threshold**", 0.0, 1.0, 0.7, 0.05)
+        st.write("""For a better visualization only coefficients with values 
+                 above the specified threshold are shown in the corrplot. """)
+        thr = st.slider("**Correlation coefficient threshold**", 0.0, 1.0, 0.7, 0.05)
     
     
         corr['size'] = 1 - abs(corr['correlation'])
@@ -165,12 +164,13 @@ def show_eda():
     **Patterns observed in the dataset:**
     
     - **Younger age distributions**: Smokers are typically younger.
-    - **Increased height**: Smokers show slightly higher median height.
     - **Elevated hemoglobin levels**: Higher median values in smokers. \
     Smoking causes CO to bind to hemoglobin, forming carboxyhemoglobin (HbCO) and reducing oxygen transport.
     - **Larger waist circumference**: Suggests potential weight-related impacts.
     - **Higher body weight**: Consistent with abdominal fat patterns; smoking habits may contribute to weight gain.,
     - **Higher relaxation times**: (example comment) Possible cardiovascular adaptations.
+    **Height-Smoking Association:** this finding might be coincidental or could reflect demographic/socioeconomic patterns in the
+    dataset rather than a direct biological relationship. It's also possible that the dataset includes specific population subgroups where these characteristics co-occur.
         """)
 
         st.markdown("""
@@ -239,6 +239,8 @@ def show_eda():
     st.markdown("""
     Explore relationships between numerical variables with interactive scatterplots.
     Points are color-coded by smoking status to identify potential patterns.
+    This scatterplot analysis provides limited new insights, functioning mainly as
+    a visual synthesis of the relationships already identified through the correlation matrix and boxplot comparisons.
     """)
     
     # Get numerical columns (excluding smoking status)
@@ -279,12 +281,14 @@ def show_eda():
     
     with st.expander("📊 Comments on scatterplots", expanded=True):
         st.markdown("""
+    
     **Key observations:**
     - **Height-Emoglobin**: These variables also exhibit moderate correlation, 
     potentially because taller individuals may have a larger blood volume
     requiring higher hemoglobin levels to meet oxygen demands
     and smoking itself can increase hemoglobin concentrations 
     (via carbon monoxide exposure, which stimulates red blood cell production).
-
+    - **Waist-Weight**: Smokers exhibit a higher values of waist circumferences and weights, reinforcing
+    the “central obesity” signal seen earlier.
 
     """)

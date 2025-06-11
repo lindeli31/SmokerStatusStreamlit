@@ -43,12 +43,12 @@ def show_confusion_matrix(cm, classes):
                      xticklabels=classes, 
                      yticklabels=classes,
                      cbar=False,
-                     annot_kws={'size': 8})  # Testo annotazione più piccolo
+                     annot_kws={'size': 8})  
     
-    # Impostazioni assi e label
+    #Axes
     ax.set_xlabel('Predicted', fontsize=6)
     ax.set_ylabel('Actual', fontsize=6)
-    ax.tick_params(axis='both', labelsize=6)  # Riduce dimensione label degli assi
+    ax.tick_params(axis='both', labelsize=6)  
     
     # Ottimizzazione layout
     plt.tight_layout(pad=0.5)
@@ -90,11 +90,13 @@ def show_modeling():
     logistic regression, and the classification tree though classification tree 
     are themselves predictor selectors. In the training of LDA and QDA,
     all variable that violet inherently the assumption of normality, which is necessary 
-    for these  models, were excluded. Cross validation is used to train the classification tree
-    to choose the cost complexity parameter. More models can be added in the future. 
+    for these  models, were excluded: **eyesight(left/right)**, **hearing left/right**, **dental caries**,
+    **urine protein**.
+    Cross validation has been used to train the classification tree
+    to choose the cost complexity parameter. More models can be added in the future.
     """)
 
-    from data_loader import load_data  # lazy import per compatibilità
+    from data_loader import load_data  
 
     file_path = st.sidebar.text_input("CSV path (Modeling)", "train_dataset.csv")
     try:
@@ -167,7 +169,7 @@ the confidence intervals narrower than they should be.
             try:
                 res = sm.Logit(y_logit, X_enc).fit(disp=0)
             except Exception as e:
-                st.error(f"Errore nell'adattamento del modello: {e}")
+                st.error(f"Error: {e}")
                 st.stop()
 
             st.subheader("Model summary")
@@ -179,7 +181,7 @@ the confidence intervals narrower than they should be.
             cm = confusion_matrix(y_logit, y_pred, labels=[0, 1])
             sens, spec = sensitivity_specificity(cm)
 
-            st.write(f"**Sensitivity (classe 1):** {sens:.3f} | **Specificity:** {spec:.3f}")
+            st.write(f"**Sensitivity (class 1):** {sens:.3f} | **Specificity:** {spec:.3f}")
             show_confusion_matrix(cm, label_names)
             plot_roc(y_logit, y_prob)
 
@@ -213,7 +215,7 @@ be to adjust the threshold and use the posterior probabilities estimated by the 
             cm = confusion_matrix(y_disc, y_pred, labels=[0, 1])
             sens, spec = sensitivity_specificity(cm)
 
-            st.write(f"**Sensitività (classe 1):** {sens:.3f} | **Specificità:** {spec:.3f}")
+            st.write(f"**Sensitivity (class 1):** {sens:.3f} | **Specificity:** {spec:.3f}")
             show_confusion_matrix(cm, label_names)
             plot_roc(y_disc, y_prob)
 
@@ -221,19 +223,19 @@ be to adjust the threshold and use the posterior probabilities estimated by the 
             st.write("""
 The decision tree is grown on the full data set with a user-defined maximum depth to keep the structure interpretable.
 Its cost-complexity pruning parameter is selected via 5-fold cross-validation, producing a pruned tree that balances accuracy and simplicity.
-In the multiselect predictors can bee chose although classification tree work themselves as predictors selectors""")
+In the multiselect predictors can bee chose although classification tree work themselves as predictors selectors. 
+CART algorithm has been used for the classification tree.""")
     # --- Predittori e target (niente split train/test) ------------------ #
             X_tree_full = df_pd[selected_vars].dropna()
             y_tree_full = y_bin.loc[X_tree_full.index]
 
-    # One-hot dei categorici
             cat_features = X_tree_full.select_dtypes(include=["object", "category"]).columns
             preprocessor = ColumnTransformer(
             transformers=[("cat", OneHotEncoder(handle_unknown="ignore"), cat_features)],
             remainder="passthrough",
         )
 
-    # Albero con profondità massima scelta a priori per interpretabilità
+    
             base_tree = DecisionTreeClassifier(
                 max_depth=max_depth,      # slider nello sidebar
                 random_state=42
@@ -260,7 +262,7 @@ In the multiselect predictors can bee chose although classification tree work th
             cm = confusion_matrix(y_tree_full, y_pred, labels=[0, 1])
             sens, spec = sensitivity_specificity(cm)
 
-            st.write(f"**Sensitività (classe 1):** {sens:.3f} | **Specificità:** {spec:.3f}")
+            st.write(f"**Sensitivity (classe 1):** {sens:.3f} | **Specificity:** {spec:.3f}")
             show_confusion_matrix(cm, label_names)
             plot_roc(y_tree_full, y_prob)
 
@@ -279,7 +281,7 @@ In the multiselect predictors can bee chose although classification tree work th
             )
             st.pyplot(fig)
     st.write("""
-    In conclusion classification trees seems to have better perfomances for our purpose.          
+    In conclusion classification trees seems to have better perfomances for our purpose.  
     """)
 
 
